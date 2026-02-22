@@ -9,11 +9,11 @@ Test it out instantly on the web:
 
 You can also deploy your own version to Vercel or any static hosting provider for a live website experience.
 
-This project is a web application that converts a 3D model into an ASCII art matrix visualization with a glowing smoke effect. It is built using React and Vite.
+This project is a web application that converts a 3D model into an ASCII art matrix visualization with a smoke effect. It is built using React and Vite.
 
 ## Features
 - Loads a 3D model and renders it as ASCII art
-- Animated glowing aura effect
+- Animated smoke effect
 - Fast, interactive, and easy to use
 
 ## Getting Started
