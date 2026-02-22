@@ -1,0 +1,9 @@
+/*
+  This is the main CSS file for your app. Import it in main.tsx if you want global styles.
+*/
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #111;
+  color: #fff;
+}
