@@ -7,15 +7,16 @@ const HEX_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const CELL_SIZE = 10;
 const BASE_CHANGE_RATE = 0.008;
 const MAX_CHANGE_RATE = 0.15;
-const NUM_BUCKETS = 12;
+const NUM_BUCKETS = 24;
 const MIN_ALPHA = 0.0;
 
-// Pre-compute alpha bucket fill styles
+// Pre-compute alpha bucket fill styles with gamma curve for depth
 const BUCKET_STYLES: string[] = [];
 for (let i = 0; i < NUM_BUCKETS; i++) {
   const t = i / (NUM_BUCKETS - 1);
-  const alpha = MIN_ALPHA + t * (1.0 - MIN_ALPHA);
-  BUCKET_STYLES.push(`rgba(255,255,255,${Math.round(alpha * 100) / 100})`);
+  // Gamma curve: more buckets in the shadows for better depth detail
+  const alpha = MIN_ALPHA + Math.pow(t, 0.7) * (1.0 - MIN_ALPHA);
+  BUCKET_STYLES.push(`rgba(255,255,255,${Math.round(alpha * 1000) / 1000})`);
 }
 
 // Scale factor for massive screens
@@ -124,7 +125,7 @@ const warpFragmentShader = `
     float rawNoise = n * 0.5 + 0.5;
     float contrastedNoise = smoothstep(0.25, 0.75, rawNoise);
     contrastedNoise = pow(contrastedNoise, 2.5);
-    float finalBrightness = contrastedNoise * 0.7;
+    float finalBrightness = contrastedNoise * 0.35;
     gl_FragColor = vec4(vec3(finalBrightness), 1.0);
   }
 `;
@@ -207,28 +208,31 @@ function SceneInternals({ asciiCanvasRef }: { asciiCanvasRef: React.RefObject<HT
     const cam = cameraRef.current;
     cam.position.set(0, 0, 5);
 
-    // Dramatic lighting: deep shadows with harsh key light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.05);
+    // Dramatic lighting: strong top-down key for jawline shadows
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.03);
     scene.add(ambientLight);
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    keyLight.position.set(1, 3, 4);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 3.5);
+    keyLight.position.set(0.5, 4, 3);
     scene.add(keyLight);
-    const fillLeft = new THREE.DirectionalLight(0xffffff, 0.15);
-    fillLeft.position.set(-5, 1, 2);
+    // Very dim side fills — let jaw edges stay dark
+    const fillLeft = new THREE.DirectionalLight(0xffffff, 0.08);
+    fillLeft.position.set(-4, 2, 2);
     scene.add(fillLeft);
-    const fillRight = new THREE.DirectionalLight(0xffffff, 0.15);
-    fillRight.position.set(5, 1, 2);
+    const fillRight = new THREE.DirectionalLight(0xffffff, 0.08);
+    fillRight.position.set(4, 2, 2);
     scene.add(fillRight);
-    const crownLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    crownLight.position.set(0, 5, -2);
+    const crownLight = new THREE.DirectionalLight(0xffffff, 3.0);
+    crownLight.position.set(0, 6, -1);
     scene.add(crownLight);
+    // Rim lights angled higher — illuminate skull top, not jaw
     const rimLeft = new THREE.DirectionalLight(0xffffff, 2.0);
-    rimLeft.position.set(-5, 3, -4);
+    rimLeft.position.set(-5, 5, -4);
     scene.add(rimLeft);
     const rimRight = new THREE.DirectionalLight(0xffffff, 2.0);
-    rimRight.position.set(5, 3, -4);
+    rimRight.position.set(5, 5, -4);
     scene.add(rimRight);
-    const chinLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    // Minimal chin light — preserve jaw underside shadows
+    const chinLight = new THREE.DirectionalLight(0xffffff, 0.15);
     chinLight.position.set(0, -5, -3);
     scene.add(chinLight);
 
@@ -286,6 +290,7 @@ function SceneInternals({ asciiCanvasRef }: { asciiCanvasRef: React.RefObject<HT
   const buckets = useRef<Array<Array<{ char: string; x: number; y: number }>>>(
     Array.from({ length: NUM_BUCKETS }, () => [])
   );
+  const brightnessGrid = useRef<Float32Array | null>(null);
 
   useFrame((_, delta) => {
     // Smooth damping — runs every frame for smooth head tracking
@@ -351,20 +356,29 @@ function SceneInternals({ asciiCanvasRef }: { asciiCanvasRef: React.RefObject<HT
 
     const headRate = Math.min(moveSpeed.current * 20, 1) * (MAX_CHANGE_RATE - BASE_CHANGE_RATE);
 
+    // Pre-compute brightness grid for edge detection
+    if (!brightnessGrid.current || brightnessGrid.current.length !== rows * cols) {
+      brightnessGrid.current = new Float32Array(rows * cols);
+    }
+    const bg = brightnessGrid.current;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const idx = ((rows - 1 - row) * cols + col) * 4;
+        bg[row * cols + col] = (buf[idx] * 0.299 + buf[idx + 1] * 0.587 + buf[idx + 2] * 0.114) / 255;
+      }
+    }
+
     // Clear buckets
     for (let i = 0; i < NUM_BUCKETS; i++) {
       buckets.current[i].length = 0;
     }
 
     // Classify each cell into a brightness bucket
+    const EDGE_THRESHOLD = 0.06;
+    const EDGE_BOOST = 0.22;
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        const idx = ((rows - 1 - row) * cols + col) * 4;
-
-        const r = buf[idx];
-        const g = buf[idx + 1];
-        const b = buf[idx + 2];
-        const brightness = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+        const brightness = bg[row * cols + col];
 
         // Fog density approach: 3-layer additive alpha
         const baseAlpha = 0.05;
@@ -380,13 +394,37 @@ function SceneInternals({ asciiCanvasRef }: { asciiCanvasRef: React.RefObject<HT
           }
         }
 
-        // Head uses sharper curve; background uses additive fog layers
-        let contrastBrightness: number;
-        if (brightness > 0.25) {
-          contrastBrightness = Math.pow(brightness, 1.8);
-        } else {
-          contrastBrightness = baseAlpha + aura + core;
+        // Edge detection: Sobel-like gradient magnitude from neighbors
+        let edgeBoost = 0;
+        if (row > 0 && row < rows - 1 && col > 0 && col < cols - 1) {
+          const left = bg[row * cols + (col - 1)];
+          const right = bg[row * cols + (col + 1)];
+          const up = bg[(row - 1) * cols + col];
+          const down = bg[(row + 1) * cols + col];
+          const gx = Math.abs(right - left);
+          const gy = Math.abs(down - up);
+          const gradient = Math.sqrt(gx * gx + gy * gy);
+          if (gradient > EDGE_THRESHOLD) {
+            edgeBoost = Math.min(gradient * 2.5, 1.0) * EDGE_BOOST;
+          }
         }
+
+        // Multi-band mapping for depth: shadows, midtones, highlights
+        let contrastBrightness: number;
+        if (brightness > 0.5) {
+          contrastBrightness = 0.6 + (brightness - 0.5) * 0.8;
+        } else if (brightness > 0.15) {
+          const mid = (brightness - 0.15) / 0.35;
+          contrastBrightness = 0.15 + mid * mid * 0.45;
+        } else if (brightness > 0.03) {
+          contrastBrightness = baseAlpha + aura + core;
+        } else {
+          contrastBrightness = baseAlpha * 0.5;
+        }
+
+        // Apply edge boost for silhouette outline
+        contrastBrightness = Math.min(contrastBrightness + edgeBoost, 1.0);
+
         const bucketIdx = Math.min(Math.floor(contrastBrightness * NUM_BUCKETS), NUM_BUCKETS - 1);
 
         buckets.current[bucketIdx].push({
