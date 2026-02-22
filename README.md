@@ -1,4 +1,13 @@
+
 # ASCII Matrix Aura
+
+## Live Demo
+
+Test it out instantly on the web:
+
+[https://model2ascii-website.vercel.app/](https://model2ascii-website.vercel.app/)
+
+You can also deploy your own version to Vercel or any static hosting provider for a live website experience.
 
 This project is a web application that converts a 3D model into an ASCII art matrix visualization with a glowing aura effect. It is built using React and Vite.
 
@@ -32,6 +41,14 @@ To use your own 3D model:
 - `public/` - Static assets (place your `head.glb` model here)
 - `index.html` - Main HTML file
 - `vite.config.ts` - Vite configuration
+
+## Live Demo
+
+Test it out instantly on the web:
+
+[https://model2ascii-website.vercel.app/](https://model2ascii-website.vercel.app/)
+
+You can also deploy your own version to Vercel or any static hosting provider for a live website experience.
 
 ## License
 MIT
